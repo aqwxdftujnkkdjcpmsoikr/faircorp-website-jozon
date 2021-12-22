@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+	<meta charset="UTF-8" />
+	<title>Simple API example</title>
+	<link href="./styles/styles.css" rel="stylesheet">
+	<script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script> <!--dev, with console warnings-->
+	<!--
+	<script src="https://cdn.jsdelivr.net/npm/vue@2"></script>
+	-->
+	<script>
+	function log(param) {
+		console.debug(param);
+	}
+	function isValidID(str) {
+		if (parseInt(str)==str) {//parse and then use == that implicitly converts to check if it actually was an int
+			return true;
+		}
+		else return false;
+	}
+	var httpRequestHFR;
+	var lastCreatedID=-1;
+	var SelectedBuildingObject = Object();
+	var selectedRoomObject = Object();
+	var SelectedBuilding_RoomsNumber=0;
+	var SelectedRoom_ID=-1;
+	var SelectedRoom_Index=0;
+	var SelectedRoom_WindowsNumber=0;
+	var SelectedRoom_HeatersNumber=0;
+	var SelectedRoomArtefact = "WINDOWS";
+	</script>
+</head>
+<body>
+	<h1>My nice-looking API</h1>
+	<h4>Add a new building</h4>
+	<form>
+		<label for="buildingMethodPOSTName">Building Name :</label>
+		<input type="text" id="buildingMethodPOSTName" name="Building name" value="Sample Building"><br>
+		<label for="buildingMethodPOSTOutTemp">Outside Temperature :</label>
+		<input type="text" id="buildingMethodPOSTOutTemp" name="Outside temp" value="12"><br>
+		<button id="buildingRequestButtonPOST" type="button">Add this building</button>
+	</form>
+
+	<h4>Delete an existing building</h4>
+	<form>
+		<label for="buildingMethodDELID">Building ID :</label>
+		<input type="text" id="buildingMethodDELID" name="Building id" value =""><br>
+		<button id="buildingRequestButtonDEL" type="button">Delete this building</button>
+	</form>
+	
+	<h4>Administrate a building in particular</h4>
+	<form>
+		<label for="buildingAdminSelect">Building ID</label>
+		<select id="buildingAdminSelect"></select>
+		<button id="buildingAdminRefreshSelectButton" type="button"><img src="images/refresh.png" width=10></button>
+		<button id="buildingAdminChooseButton" type="button"><img src="images/validate.png" width=10></button>
+	</form>
+	<form id="roomActionButtonsForm" hidden>
+		<button id="roomAdminButton" type="button">Administrate a room</button>
+		<button id="roomCreateButton" type="button">Create a new room</button>
+		<button id="roomDeleteButton" type="button">Delete a room</button>
+	</form>
+	<p id="administratingInterface">
+	</p>
+	<fieldset id=roomField hidden>
+		<legend>Room </legend>
+	</fieldset>
+	
+	
+
+</body>
+
+<script>
+	function makeRequestBuilding() {
+		httpRequest = new XMLHttpRequest();
+		if (!httpRequest) {
+			alert("Abandon :( Impossible to create a XMLHTTP instance");
+			return false;
+		}
+		httpRequest.onreadystatechange = alertContents;
+			// instructions de traitement de la réponse
+		// httpRequest.open("GET", "test.html");
+		httpRequest.open("GET", "https://faircorp-ojozon.cleverapps.io/api/buildings");
+		httpRequest.send();
+		return httpRequest.responseText;
+	}
+	function makeRequestBuildingSilent() {
+        httpRequest = new XMLHttpRequest();
+        if (!httpRequest) {
+          alert("Abandon :( Impossible to create a XMLHTTP instance");
+          return false;
+        }
+        httpRequest.onreadystatechange = silentRefreshSelectOptions;
+        httpRequest.open("GET", "https://faircorp-ojozon.cleverapps.io/api/buildings");
+        httpRequest.send();	
+		return;
+    }
+	function makeRequestBuildingPOST() {
+        httpRequest = new XMLHttpRequest();
+        if (!httpRequest) {
+          alert("Abandon :( Impossible to create a XMLHTTP instance");
+          return false;
+        }
+        httpRequest.onreadystatechange = ConfirmAdd;
+        httpRequest.open("POST", "https://faircorp-ojozon.cleverapps.io/api/buildings", true);
+		httpRequest.setRequestHeader('Content-Type', 'application/json');
+		httpRequest.send(JSON.stringify({
+			name: document.getElementById("buildingMethodPOSTName").value,
+			outsideTemperature: document.getElementById("buildingMethodPOSTOutTemp").value
+		}));
+        httpRequest.send();
+    }
+	function makeRequestBuildingDEL() {
+        httpRequest = new XMLHttpRequest();
+        if (!httpRequest) {
+          alert("Abandon :( Impossible to create a XMLHTTP instance");
+          return false;
+        }
+        httpRequest.onreadystatechange = ConfirmDel;
+        httpRequest.open("DELETE", "https://faircorp-ojozon.cleverapps.io/api/buildings/"+document.getElementById("buildingMethodDELID").value, true);
+        httpRequest.send();
+    }
+	function requestBuildingInfo() {
+		//hide the panel below because it doesn't make sense now
+		document.getElementById("roomField").hidden = true;
+		httpRequest = new XMLHttpRequest();
+		if (!httpRequest) {
+			alert("Abandon :( Impossible to create a XMLHTTP instance");
+			return false;
+		}
+		httpRequest.onreadystatechange = refreshAdminOptions;
+		if (document.getElementById("buildingAdminSelect").value==""){
+			//cut short and do nothing when no building was selected
+			return false;
+		}
+		//console.log("administrating building with id "+document.getElementById("buildingAdminSelect").value);
+		httpRequest.open("GET", "https://faircorp-ojozon.cleverapps.io/api/buildings/"+document.getElementById("buildingAdminSelect").value);
+		httpRequest.send();	
+		return;
+	}
+	function requestHeatersInfoForSelectedRoom() {
+		httpRequestHFR = new XMLHttpRequest();
+		if (!httpRequestHFR) {
+			alert("Abandon :( Impossible to create a XMLHTTP instance");
+			return false;
+		}
+		httpRequestHFR.onreadystatechange = refreshRoomAdminAdminBox;
+		httpRequestHFR.open("GET", "https://faircorp-ojozon.cleverapps.io/api/rooms/"+SelectedRoom_ID);
+		httpRequestHFR.send();	
+		return;
+	}
+	function sendHeaterStatusToggle(heaterID) {
+		//console.log("Switching status for heater id :"+heaterID);
+		httpRequestHFR = new XMLHttpRequest();
+		if (!httpRequestHFR) {
+			alert("Abandon :( Impossible to create a XMLHTTP instance");
+			return false;
+		}
+		httpRequestHFR.onreadystatechange = refreshSingleHeaterField;
+		httpRequestHFR.open("PUT", "https://faircorp-ojozon.cleverapps.io/api/heaters/"+heaterID+"/switch");
+		httpRequestHFR.send();	
+		return;	
+	}
+	function addNewHeaterRequestForSelectedRoom() {
+		//console.log(powerVar, parseInt(powerVar));
+		var powerVar = document.getElementById("newHeaterPower").value;
+		if (powerVar=="" || powerVar=="null") {
+			powerVar="null";
+		}
+		else if (parseInt(powerVar)!=powerVar) {
+			alert("Power should be an integer or 'null'\n(leaving the field blank will be accepted as 'null'");
+			document.getElementById("newHeaterPower").value = "";//empty the input
+			return;
+		}
+
+		httpRequestHFR = new XMLHttpRequest();
+		if (!httpRequestHFR) {
+			alert("Abandon :( Impossible to create a XMLHTTP instance");
+			return false;
+		}
+		httpRequestHFR.onreadystatechange = awaitHeaterCreationResponseAndRefreshRoomField;
+		httpRequestHFR.open("POST", "https://faircorp-ojozon.cleverapps.io/api/heaters/");
+		httpRequestHFR.setRequestHeader('Content-Type', 'application/json');
+		httpRequestHFR.send(JSON.stringify({
+			heaterStatus: "OFF",
+			name: document.getElementById("newHeaterInput").value,
+			power: powerVar,
+			roomId: SelectedRoom_ID,
+			roomName: selectedRoomObject.name
+		}));
+		httpRequestHFR.send();	
+		return;	
+	}
+	function sendHeaterDeleteRequest(heaterID) {
+		//console.log("Switching status for heater id :"+heaterID);
+		httpRequestHFR = new XMLHttpRequest();
+		if (!httpRequestHFR) {
+			alert("Abandon :( Impossible to create a XMLHTTP instance");
+			return false;
+		}
+		httpRequestHFR.onreadystatechange = awaitDeleteHeaterConfirmationAndRefreshRoomField;
+		httpRequestHFR.open("DELETE", "https://faircorp-ojozon.cleverapps.io/api/heaters/"+heaterID);
+		httpRequestHFR.send();	
+		return;	
+	}
+	//Same for windows
+	function requestwindowsInfoForSelectedRoom() {
+		httpRequestHFR = new XMLHttpRequest();
+		if (!httpRequestHFR) {
+			alert("Abandon :( Impossible to create a XMLHTTP instance");
+			return false;
+		}
+		httpRequestHFR.onreadystatechange = refreshRoomAdminAdminBox;
+		httpRequestHFR.open("GET", "https://faircorp-ojozon.cleverapps.io/api/rooms/"+SelectedRoom_ID);
+		httpRequestHFR.send();	
+		return;
+	}
+	function sendwindowStatusToggle(windowID) {
+		//console.log("Switching status for window id :"+windowID);
+		httpRequestHFR = new XMLHttpRequest();
+		if (!httpRequestHFR) {
+			alert("Abandon :( Impossible to create a XMLHTTP instance");
+			return false;
+		}
+		httpRequestHFR.onreadystatechange = refreshSinglewindowField;
+		httpRequestHFR.open("PUT", "https://faircorp-ojozon.cleverapps.io/api/windows/"+windowID+"/switch");
+		httpRequestHFR.send();	
+		return;	
+	}
+	function addNewwindowRequestForSelectedRoom() {
+		httpRequestHFR = new XMLHttpRequest();
+		if (!httpRequestHFR) {
+			alert("Abandon :( Impossible to create a XMLHTTP instance");
+			return false;
+		}
+		httpRequestHFR.onreadystatechange = awaitwindowCreationResponseAndRefreshRoomField;
+		httpRequestHFR.open("POST", "https://faircorp-ojozon.cleverapps.io/api/windows");
+		httpRequestHFR.setRequestHeader('Content-Type', 'application/json');
+		httpRequestHFR.send(JSON.stringify({
+			windowStatus: "CLOSED",
+			name: document.getElementById("newwindowInput").value,
+			roomId: SelectedRoom_ID,
+			roomName: selectedRoomObject.name
+		}));
+		httpRequestHFR.send();	
+		return;	
+	}
+	function sendwindowDeleteRequest(windowID) {
+		//console.log("Switching status for window id :"+windowID);
+		httpRequestHFR = new XMLHttpRequest();
+		if (!httpRequestHFR) {
+			alert("Abandon :( Impossible to create a XMLHTTP instance");
+			return false;
+		}
+		httpRequestHFR.onreadystatechange = awaitDeletewindowConfirmationAndRefreshRoomField;
+		httpRequestHFR.open("DELETE", "https://faircorp-ojozon.cleverapps.io/api/windows/"+windowID);
+		httpRequestHFR.send();	
+		return;	
+	}
+	function addNewRoomForSelectedBuilding() {
+		httpRequest = new XMLHttpRequest();
+		if (!httpRequest) {
+			alert("Abandon :( Impossible to create a XMLHTTP instance");
+			return false;
+		}
+		var floorinput = document.getElementById("roomCreateInputFloor").value;
+		if (floorinput=="" || !parseInt(floorinput)==floorinput) {
+			console.log("Warning : wrong format of floor specified in room creation request : defaulting to floor = 0");
+			floorinput = 0; // wrong/empty floor will default to 0, logged
+		}
+		httpRequest.onreadystatechange = confirmRoomCreation;
+		httpRequest.open("POST", "https://faircorp-ojozon.cleverapps.io/api/rooms");
+		httpRequest.setRequestHeader('Content-Type', 'application/json');
+		httpRequest.send(JSON.stringify({
+  			buildingId: SelectedBuildingObject.id,
+  			floor: floorinput,
+  			name: document.getElementById("roomCreateInputName").value
+		}));
+		httpRequest.send();	
+		return;	
+	}
+	function requestSelectedBuildingInfoUpdate() {
+		httpRequest = new XMLHttpRequest();
+		if (!httpRequest) {
+			alert("Abandon :( Impossible to create a XMLHTTP instance");
+			return false;
+		}
+		httpRequest.onreadystatechange = awaitBuildingInfoUpdateAndRefresh;
+		if (document.getElementById("buildingAdminSelect").value==""){
+			return false;
+		}
+		httpRequest.open("GET", "https://faircorp-ojozon.cleverapps.io/api/buildings/"+document.getElementById("buildingAdminSelect").value);
+		httpRequest.send();	
+		return;
+	}
+	function requestSelectedBuildingInfoUpdateThenRefreshDeleteBox() {
+		httpRequest = new XMLHttpRequest();
+		if (!httpRequest) {
+			alert("Abandon :( Impossible to create a XMLHTTP instance");
+			return false;
+		}
+		httpRequest.onreadystatechange = awaitBuildingInfoUpdateAndRefreshDelete;
+		if (document.getElementById("buildingAdminSelect").value==""){
+			return false;
+		}
+		httpRequest.open("GET", "https://faircorp-ojozon.cleverapps.io/api/buildings/"+document.getElementById("buildingAdminSelect").value);
+		httpRequest.send();	
+		return;
+	}
+	function requestDeleteRoom() {
+		httpRequest = new XMLHttpRequest();
+		if (!httpRequest) {
+			alert("Abandon :( Impossible to create a XMLHTTP instance");
+			return false;
+		}
+		httpRequest.onreadystatechange = awaitRoomDeleteConfirmAndRefresh;
+		if (document.getElementById("roomDeleteSelect").value==""){
+			return false;
+		}
+		httpRequest.open("DELETE", "https://faircorp-ojozon.cleverapps.io/api/rooms/"+document.getElementById("roomDeleteSelect").value);
+		httpRequest.send();	
+		return;
+	}
+
+
+
+
+	
+	
+
+
+
+	function awaitRoomDeleteConfirmAndRefresh() {
+		if (httpRequest.readyState === XMLHttpRequest.DONE) {
+			if (httpRequest.status === 200) {
+				//request is done and went well, refresh the whole admin field
+				//but for that we need to refresh to selected building object
+				requestSelectedBuildingInfoUpdateThenRefreshDeleteBox();
+			}
+			else {
+				alert("There was a problem with the request");
+			}
+		}
+	}
+	function awaitBuildingInfoUpdateAndRefreshDelete() {
+		if (httpRequest.readyState === XMLHttpRequest.DONE) {
+			if (httpRequest.status === 200) {
+				//request is done and went well
+				//console.log("Received update :"+httpRequest.responseText);
+				var buildingObjectReceived = JSON.parse(httpRequest.responseText);
+				SelectedBuildingObject = buildingObjectReceived;
+				SelectedBuilding_RoomsNumber = SelectedBuildingObject.rooms.length;
+				refreshRoomAdminBox("delete");
+			}
+			else {
+				alert("There was a problem with the request");
+				console.log(httpRequest.responseText);
+			}
+		}
+	}
+	function awaitBuildingInfoUpdateAndRefresh() {
+		if (httpRequest.readyState === XMLHttpRequest.DONE) {
+			if (httpRequest.status === 200) {
+				//request is done and went well
+				var buildingObjectReceived = JSON.parse(httpRequest.responseText);
+				SelectedBuildingObject = buildingObjectReceived;
+				SelectedBuilding_RoomsNumber = SelectedBuildingObject.rooms.length;
+			}
+			else {
+				alert("There was a problem with the request");
+				console.log(httpRequest.responseText);
+			}
+		}
+	}
+	function confirmRoomCreation() {
+		if (httpRequest.readyState === XMLHttpRequest.DONE) {
+			if (httpRequest.status === 200) {
+				//request is done and went well
+				var roomObjectReceived = JSON.parse(httpRequest.responseText);
+				requestSelectedBuildingInfoUpdate();//to update the info 
+				alert("Room was successfully created with id : "+roomObjectReceived.id);
+			}
+			else {
+				alert("There was a problem with the request");
+				console.log(httpRequest.responseText);
+			}
+		}
+	}
+	function awaitDeletewindowConfirmationAndRefreshRoomField(){
+		if (httpRequestHFR.readyState === XMLHttpRequest.DONE) {
+			if (httpRequestHFR.status === 200) {
+				//request is done and went well, refresh the whole block thing
+				requestwindowsInfoForSelectedRoom();
+			}
+			else {
+				alert("There was a problem with the request");
+			}
+		}
+	}
+	function awaitwindowCreationResponseAndRefreshRoomField(){
+		if (httpRequestHFR.readyState === XMLHttpRequest.DONE) {
+			if (httpRequestHFR.status === 200) {
+				//request is done and went well, refresh the whole block thing
+				requestwindowsInfoForSelectedRoom();
+			}
+			else {
+				alert("There was a problem with the request");
+			}
+		}
+	}
+	function refreshSinglewindowField(windowID){
+		if (httpRequestHFR.readyState === XMLHttpRequest.DONE) {
+			if (httpRequestHFR.status === 200) {
+				//console.log(httpRequestHFR.responseText);
+				var windowObject = JSON.parse(httpRequestHFR.responseText);
+				//Refreshintensive method :
+				//requestwindowsInfoForSelectedRoom(); // (refresh the entire windows list)
+				//But we can simply update the single window field with the new data
+				var thiswindowButton = document.getElementById("windowToggleButtonID"+windowObject.id);
+				thiswindowButton.textContent = windowObject.windowStatus;
+			}
+			else {
+				alert("There was a problem with the request");
+			}
+		}
+	}
+	function awaitDeleteHeaterConfirmationAndRefreshRoomField(){
+		if (httpRequestHFR.readyState === XMLHttpRequest.DONE) {
+			if (httpRequestHFR.status === 200) {
+				//request is done and went well, refresh the whole block thing
+				requestHeatersInfoForSelectedRoom();
+			}
+			else {
+				alert("There was a problem with the request");
+			}
+		}
+	}
+	function awaitHeaterCreationResponseAndRefreshRoomField(){
+		if (httpRequestHFR.readyState === XMLHttpRequest.DONE) {
+			if (httpRequestHFR.status === 200) {
+				//request is done and went well, refresh the whole block thing
+				requestHeatersInfoForSelectedRoom();
+			}
+			else {
+				alert("There was a problem with the request");
+			}
+		}
+	}
+	function refreshSingleHeaterField(heaterID){
+		if (httpRequestHFR.readyState === XMLHttpRequest.DONE) {
+			if (httpRequestHFR.status === 200) {
+				//console.log(httpRequestHFR.responseText);
+				var heaterObject = JSON.parse(httpRequestHFR.responseText);
+				//Refreshintensive method :
+				//requestHeatersInfoForSelectedRoom(); // (refresh the entire heaters list)
+				//But we can simply update the single heater field with the new data
+				var thisHeaterButton = document.getElementById("heaterToggleButtonID"+heaterObject.id);
+				thisHeaterButton.textContent = heaterObject.heaterStatus;
+			}
+			else {
+				alert("There was a problem with the request");
+			}
+		}
+	}
+	function refreshRoomAdminAdminBox() {
+		if (httpRequestHFR.readyState === XMLHttpRequest.DONE) {
+				if (httpRequestHFR.status === 200) {
+					if (SelectedRoomArtefact=="HEATERS") {
+						//console.log("REQUEST for room ID"+SelectedRoom_ID);
+						selectedRoomObject = JSON.parse(httpRequestHFR.responseText);
+						//console.log(selectedRoomObject.heaters);
+						var heatersList = selectedRoomObject.heaters
+						SelectedRoom_HeatersNumber = heatersList.length;
+						var myRoomFieldList = document.getElementById("roomFieldList");
+						//console.log("LEN"+myRoomFieldList.childNodes.length)
+						for (var a=myRoomFieldList.childNodes.length-1; a>=0;--a ) { myRoomFieldList.removeChild(myRoomFieldList.childNodes[a]); }
+						if (true) {myRoomFieldList.hidden=false;}
+						for (var i=0;i<SelectedRoom_HeatersNumber;++i) {
+							var newField = document.createElement("fieldset");
+							newField.id = "SingleHeaterFieldID"+heatersList[i].id;
+							var newLegendNode = document.createElement("legend");
+							newLegendNode.textContent = heatersList[i].name+" (ID : "+heatersList[i].id+")";
+							newField.appendChild(newLegendNode);
+							var newParagraph = document.createElement("p");
+							newParagraph.innerHTML = "<b>Power</b> : "+heatersList[i].power + " <b>Status</b> : ";
+							var newButtonToggle = document.createElement("button");
+							newButtonToggle.type = "button";
+							newButtonToggle.id = "heaterToggleButtonID"+heatersList[i].id;
+							newButtonToggle.textContent = heatersList[i].heaterStatus;
+							newButtonToggle.name=heatersList[i].id;
+							newButtonToggle.addEventListener("click", function(){sendHeaterStatusToggle(this.name);});
+							newParagraph.appendChild(newButtonToggle);
+							newField.appendChild(newParagraph);
+
+							//newField.appendChild(document.createElement("br"));
+							var newButtonDelete = document.createElement("button");
+							newButtonDelete.type = "button";
+							newButtonDelete.textContent = "Delete Permanently";
+							newButtonDelete.id = "heaterDeleteButtonID"+heatersList[i].id;
+							newButtonDelete.name = heatersList[i].id;
+							newButtonDelete.addEventListener("click",function(){sendHeaterDeleteRequest(this.name);});
+							newField.appendChild(newButtonDelete);
+							myRoomFieldList.appendChild(newField);
+						}
+						var newField = document.createElement("fieldset");
+						var newLegendNode = document.createElement("legend");
+						newLegendNode.textContent = "Add a new heater";
+						newField.appendChild(newLegendNode);
+						//TODO : add other fields
+						var newInput = document.createElement("input");
+						newInput.id = "newHeaterInput";
+						var newLabelName = document.createElement("label");
+						newLabelName.innerHTML = "<b>Name</b> :";
+						newLabelName.setAttribute("for", "newHeaterInput");
+						var newInput2 = document.createElement("input");
+						newInput2.id = "newHeaterPower";
+						var newLabelPower = document.createElement("label");
+						newLabelPower.innerHTML = "<b>Power</b> :";
+						newLabelPower.setAttribute("for", "newHeaterPower");
+						var newButton = document.createElement("button");
+						newButton.textContent = "Add";
+						newButton.type="button";
+						//TODO : add & hook up create
+						newButton.addEventListener("click",addNewHeaterRequestForSelectedRoom);
+						newField.appendChild(document.createElement("br"));
+						newField.appendChild(newLabelName);
+						newField.appendChild(newInput);
+						newField.appendChild(newLabelPower);
+						newField.appendChild(newInput2);
+						newField.appendChild(newButton);
+
+						myRoomFieldList.appendChild(newField);
+					}
+					if (SelectedRoomArtefact=="WINDOWS") {
+						//console.log("REQUEST for room ID"+SelectedRoom_ID);
+						selectedRoomObject = JSON.parse(httpRequestHFR.responseText);
+						//console.log(selectedRoomObject.windows);
+						var windowsList = selectedRoomObject.windows
+						SelectedRoom_windowsNumber = windowsList.length;
+						var myRoomFieldList = document.getElementById("roomFieldList");
+						//console.log("LEN"+myRoomFieldList.childNodes.length)
+						for (var a=myRoomFieldList.childNodes.length-1; a>=0;--a ) { myRoomFieldList.removeChild(myRoomFieldList.childNodes[a]); }
+						if (true) {myRoomFieldList.hidden=false;}
+						for (var i=0;i<SelectedRoom_windowsNumber;++i) {
+							var newField = document.createElement("fieldset");
+							newField.id = "SinglewindowFieldID"+windowsList[i].id;
+							var newLegendNode = document.createElement("legend");
+							newLegendNode.textContent = windowsList[i].name+" (ID : "+windowsList[i].id+")";
+							newField.appendChild(newLegendNode);
+							var newParagraph = document.createElement("p");
+							newParagraph.innerHTML = "<b>Status</b> : ";
+							var newButtonToggle = document.createElement("button");
+							newButtonToggle.type = "button";
+							newButtonToggle.id = "windowToggleButtonID"+windowsList[i].id;
+							newButtonToggle.textContent = windowsList[i].windowStatus;
+							newButtonToggle.name=windowsList[i].id;
+							newButtonToggle.addEventListener("click", function(){sendwindowStatusToggle(this.name);});
+							newParagraph.appendChild(newButtonToggle);
+							newField.appendChild(newParagraph);
+
+							//Add image to view fast if open or not open
+							if (false) {
+								var newImageNode = document.createElement("img");
+								if (windowsList[i].windowStatus=="ON") {
+									newImageNode.src = "images/hot.webp";
+									newImageNode.alt = "[IMAGE : hot]";
+								}
+								else {
+									newImageNode.src = "images/not_hot.jpeg";
+									newImageNode.alt = "[IMAGE : not hot]";
+								}
+								newImageNode.width = 200;
+								newField.appendChild(newImageNode);
+								newField.appendChild(document.createElement("br"));
+							}
+							var newButtonDelete = document.createElement("button");
+							newButtonDelete.type = "button";
+							newButtonDelete.textContent = "Delete Permanently";
+							newButtonDelete.id = "windowDeleteButtonID"+windowsList[i].id;
+							newButtonDelete.name = windowsList[i].id;
+							newButtonDelete.addEventListener("click",function(){sendwindowDeleteRequest(this.name);});
+							newField.appendChild(newButtonDelete);
+							myRoomFieldList.appendChild(newField);
+						}
+						var newField = document.createElement("fieldset");
+						var newLegendNode = document.createElement("legend");
+						newLegendNode.textContent = "Add a new window";
+						newField.appendChild(newLegendNode);
+						//TODO : add other fields
+						var newInput = document.createElement("input");
+						newInput.id = "newwindowInput";
+						var newLabelName = document.createElement("label");
+						newLabelName.innerHTML = "<b>Name</b> :";
+						newLabelName.setAttribute("for", "newwindowInput");
+						var newButton = document.createElement("button");
+						newButton.textContent = "Add";
+						newButton.type="button";
+						//TODO : add & hook up create
+						newButton.addEventListener("click",addNewwindowRequestForSelectedRoom);
+						newField.appendChild(document.createElement("br"));
+						newField.appendChild(newLabelName);
+						newField.appendChild(newInput);
+						newField.appendChild(newButton);
+
+						myRoomFieldList.appendChild(newField);
+					}
+				}
+		else {
+				alert("There was a problem with the request");
+			}
+		}
+	}
+	function refreshRoomAdminBox(action) {
+		//In any case : 
+		var myRoomField = document.getElementById("roomField");
+		myRoomField.hidden = false;
+		var listOfChildren = myRoomField.childNodes;
+		for (var a=listOfChildren.length-1;a>=0;--a) {myRoomField.removeChild(listOfChildren[a]);}
+		
+		//Specific content for the box now :
+		if (action=="admin") {
+			document.getElementById("roomAdminButton").setAttribute("style", "background-color:#006f00");
+			document.getElementById("roomCreateButton").setAttribute("style", "background-color:default");
+			document.getElementById("roomDeleteButton").setAttribute("style", "background-color:default");
+			requestSelectedBuildingInfoUpdate();
+			if (SelectedBuilding_RoomsNumber<=0) {
+				//if no room is available, hide the control panel back, and terminate
+				myRoomField.hidden = true;
+				return;
+			}
+			//We should refresh the building object and all globals in case we added or deleted rooms since
+			//TODO : refresh
+			//Else select first room by default, and then set title (legend) of the box
+			var newLegendNode = document.createElement("legend");
+			newLegendNode.textContent = SelectedBuildingObject.rooms[SelectedRoom_Index].name+" (ID : "+SelectedBuildingObject.rooms[SelectedRoom_Index].id+")";
+			myRoomField.appendChild(newLegendNode);
+			//option to change the selected room
+			var newSelect = document.createElement("select");
+			newSelect.id = "RoomAdminAdminSelectID";
+			for (var i=0;i<SelectedBuilding_RoomsNumber;++i) {
+				var newOption = document.createElement("option");
+				newOption.textContent = SelectedBuildingObject.rooms[i].name+" (ID : "+SelectedBuildingObject.rooms[i].id+")";
+				newOption.value = i;
+				newSelect.add(newOption);
+			}
+			newSelect.value = SelectedRoom_Index;
+			selectedRoomObject = SelectedBuildingObject.rooms[SelectedRoom_Index];
+			newSelect.addEventListener("change",function(){SelectedRoom_Index=this.value;SelectedRoom_ID=SelectedBuildingObject.rooms[SelectedRoom_Index].id;refreshRoomAdminBox("admin");})
+			var newLabelNode = document.createElement("label");
+			newLabelNode.innerHTML = "Selected Room : ";
+			newLabelNode.setAttribute("for","RoomAdminAdminSelectID");
+			//TODO : ADD INFO FOR ROOM (NEAR-DONE)
+			//TODO : ADD Possibility to change (input + validateButton)
+			var newParagraphInfo = document.createElement("p");
+			newParagraphInfo.innerHTML = "<b>Floor</b> : "+selectedRoomObject.floor+"<br><b>Target temperature</b> :"+selectedRoomObject.targetTemperature+"<br><b>Current temperature</b> :"+selectedRoomObject.currentTemperature;
+
+			var newButton = document.createElement("button");
+			newButton.type = "button";
+			newButton.textContent = "Windows"
+			if (SelectedRoomArtefact=="WINDOWS") {
+				newButton.setAttribute("style", "background-color:#006f00");
+			}
+			else {newButton.setAttribute("style", "background-color:#ffffff");}
+			newButton.addEventListener("click",function(){SelectedRoomArtefact="WINDOWS";refreshRoomAdminBox("admin");refreshRoomAdminAdminBox(SelectedRoomArtefact);});
+			var newButton2 = document.createElement("button");
+			newButton2.type = "button";
+			newButton2.textContent = "Heaters"
+			if (SelectedRoomArtefact=="HEATERS") {
+				newButton2.setAttribute("style", "background-color:#006f00");
+			}
+			else {newButton2.setAttribute("style", "background-color:#ffffff");}
+			newButton2.addEventListener("click",function(){SelectedRoomArtefact="HEATERS";refreshRoomAdminBox("admin");refreshRoomAdminAdminBox(SelectedRoomArtefact);});
+			//var newTextNode = document.createElement("textarea"); // TEMPORARY DISPLAY
+			//newTextNode.textContent = SelectedRoomArtefact;
+			var newField2 = document.createElement("fieldset");
+			newField2.setAttribute("id","roomFieldList");
+			newField2.hidden = true;
+
+			myRoomField.appendChild(newLabelNode);
+			myRoomField.appendChild(newSelect);
+			myRoomField.appendChild(newParagraphInfo);
+			myRoomField.appendChild(newButton);
+			myRoomField.appendChild(newButton2);
+			//myRoomField.appendChild(newTextNode);
+			myRoomField.appendChild(newField2);
+
+			requestHeatersInfoForSelectedRoom();
+			for (var i=0;i<SelectedRoom_WindowsNumber;++i) {
+
+			}
+		}
+		else if (action=="create") {
+			document.getElementById("roomAdminButton").setAttribute("style", "background-color:default");
+			document.getElementById("roomCreateButton").setAttribute("style", "background-color:#006f00");
+			document.getElementById("roomDeleteButton").setAttribute("style", "background-color:default");
+			//add a form with inputs for name, floor, (building ID auto) (minimal request because the rest is dropped)
+			var newLegendNode = document.createElement("legend");
+			newLegendNode.textContent = "New room in the '"+SelectedBuildingObject.name+"' building";
+			var newParagraph = document.createElement("p");
+			newParagraph.innerHTML = "<i>Create a new room in the selected building, by specifying its name and the floor it's at.</i>"
+
+			var newForm = document.createElement("form");
+			newForm.id = "roomCreateForm";
+			var newInput = document.createElement("input");
+			newInput.id = "roomCreateInputName";
+			newInput.value = "Sample Room";
+			var newLabel = document.createElement("label");
+			newLabel.textContent = "Name :";
+			newLabel.setAttribute("for","roomCreateInputName");
+			newForm.appendChild(newLabel);
+			newForm.appendChild(newInput);
+			newForm.appendChild(document.createElement("br"));
+
+			newInput = document.createElement("input");
+			newInput.id = "roomCreateInputFloor";
+			newInput.value = "0";
+			newLabel = document.createElement("label");
+			newLabel.innerHTML = "Floor &nbsp:"; //trick to render double space and align nicely. Not clean, but whatever.
+			newLabel.setAttribute("for","roomCreateInputFloor");
+			newForm.appendChild(newLabel);
+			newForm.appendChild(newInput);
+			newForm.appendChild(document.createElement("br"));
+
+			var newButton = document.createElement("button");
+			newButton.type = "button";
+			newButton.textContent = "Create";
+			newButton.addEventListener("click", addNewRoomForSelectedBuilding);
+			newForm.appendChild(newButton);
+
+			myRoomField.appendChild(newLegendNode);
+			myRoomField.appendChild(newParagraph);
+			myRoomField.appendChild(newForm);
+
+		}
+		else if (action=="delete") {
+			document.getElementById("roomAdminButton").setAttribute("style", "background-color:default");
+			document.getElementById("roomCreateButton").setAttribute("style", "background-color:default");
+			document.getElementById("roomDeleteButton").setAttribute("style", "background-color:#006f00");
+
+			var newLegendNode = document.createElement("legend");
+			newLegendNode.textContent = "Delete a room in the '"+SelectedBuildingObject.name+"' building";//------------------------------------HERE
+
+			var newForm = document.createElement("form");
+			newForm.id = "roomDeleteForm";
+
+			var newSelect = document.createElement("select");
+			newSelect.id = "roomDeleteSelect";
+			
+			
+			//console.log(JSON.stringify(SelectedBuildingObject.rooms));
+			for (var roomIndex in SelectedBuildingObject.rooms) {
+				var newSelectOption = document.createElement("option");
+				newSelectOption.text = (SelectedBuildingObject.rooms[roomIndex]).name + " (ID : "+(SelectedBuildingObject.rooms[roomIndex]).id+")";
+				newSelectOption.value = (SelectedBuildingObject.rooms[roomIndex]).id;
+				newSelect.add(newSelectOption);
+			}
+
+			var newLabel = document.createElement("label");
+			newLabel.textContent = "Room :";
+			newLabel.setAttribute("for","roomDeleteSelect");
+			newForm.appendChild(newLabel);
+			newForm.appendChild(newSelect);
+
+			var newButton = document.createElement("button");
+			newButton.type = "button";
+			newButton.textContent = "Delete";
+			newButton.addEventListener("click", requestDeleteRoom);
+			newForm.appendChild(newButton);
+
+			myRoomField.appendChild(newLegendNode);
+			myRoomField.appendChild(newForm);
+		}
+	}
+	function refreshAdminOptions() {
+		if (httpRequest.readyState === XMLHttpRequest.DONE) {
+			if (httpRequest.status === 200) {
+				SelectedBuildingObject = JSON.parse(httpRequest.responseText);
+				//TODO add administrating options
+				document.getElementById("roomActionButtonsForm").hidden = false;
+				//First, empty all our forms from previous options if they exist
+				SelectedBuilding_RoomsNumber = SelectedBuildingObject.rooms.length;
+				if (SelectedBuilding_RoomsNumber>0) {SelectedRoom_ID = SelectedBuildingObject.rooms[0].id;}
+				//Then add the room selector
+				//preselect administrate tab
+				refreshRoomAdminBox("admin");
+			}
+			else {
+				alert("There was a problem with the request");
+			}
+		}
+	}
+	function silentRefreshSelectOptions() {
+		if (httpRequest.readyState === XMLHttpRequest.DONE) {
+			if (httpRequest.status === 200) {
+				for (a in document.getElementById("buildingAdminSelect").options) { document.getElementById("buildingAdminSelect").options.remove(0); }
+				//console.log("yo"+httpRequest.responseText);
+				listOfBuildings=JSON.parse(httpRequest.responseText);
+				//console.log(listOfBuildings);
+				for (itemIndex in listOfBuildings) {
+					//console.log("  "+listOfBuildings[itemIndex].id+listOfBuildings[itemIndex].name);
+					var newOption = document.createElement("option");
+					newOption.text=listOfBuildings[itemIndex].id+" : "+listOfBuildings[itemIndex].name;
+					newOption.value=listOfBuildings[itemIndex].id;
+					document.getElementById("buildingAdminSelect").add(newOption)
+				}
+			}
+		}
+	}
+    function alertContents() {
+        if (httpRequest.readyState === XMLHttpRequest.DONE) {
+          // tout va bien, la réponse a été reçue
+          if (httpRequest.status === 200) {
+            alert(httpRequest.responseText);
+          } else {
+            alert("There was a problem with the request");
+          }
+        }
+    }
+	function ConfirmAdd() {
+		if (httpRequest.readyState === XMLHttpRequest.DONE) {
+          if (httpRequest.status === 200) {
+			  //custom confirmation message
+			var foo = JSON.parse(httpRequest.responseText);
+			var alertText = "Added the building \""+foo.name+"\" with id "+foo.id;
+            alert(alertText);
+			lastCreatedID=foo.id;
+			document.getElementById("buildingMethodDELID").value=lastCreatedID;
+          } else {
+            alert("There was a problem with the request");
+          }
+        }
+	}
+	function ConfirmDel() {
+		if (httpRequest.readyState === XMLHttpRequest.DONE) {
+          if (httpRequest.status === 200) {
+            alert("Successfully deleted \n"+httpRequest.responseText);
+			document.getElementById("buildingMethodDELID").value=""; //empty the field upon successful delete
+          } else {
+			  if (isValidID(document.getElementById("buildingMethodDELID").value)) {
+				alert("There was a problem with the request");
+			  }
+			  else {
+				  alert("Request failed :\nInvalid ID : "+document.getElementById("buildingMethodDELID").value);
+				  document.getElementById("buildingMethodDELID").value = "";//remove invalid id
+			  }
+          }
+        }
+	}
+	function refreshOptionsBuildingAdminSelect() {
+		var foo = makeRequestBuildingSilent();
+	}
+	(function () {
+		var httpRequest;
+		
+		//document
+		//.getElementById("buildingRequestButton")
+		//.addEventListener("click", makeRequestBuilding);
+		document
+		.getElementById("buildingRequestButtonPOST")
+		.addEventListener("click", makeRequestBuildingPOST);
+		document
+		.getElementById("buildingRequestButtonDEL")
+		.addEventListener("click", makeRequestBuildingDEL);
+		document
+		.getElementById("buildingAdminRefreshSelectButton")
+		.addEventListener("click", refreshOptionsBuildingAdminSelect);
+		document
+		.getElementById("buildingAdminSelect")
+		.addEventListener("change", requestBuildingInfo);
+		document
+		.getElementById("buildingAdminChooseButton")
+		.addEventListener("click", requestBuildingInfo);
+		document
+		.getElementById("roomCreateButton")
+		.addEventListener("click", function(){refreshRoomAdminBox("create");});
+		document
+		.getElementById("roomDeleteButton")
+		.addEventListener("click", function(){refreshRoomAdminBox("delete");});
+		document
+		.getElementById("roomAdminButton")
+		.addEventListener("click", function(){refreshRoomAdminBox("admin");});
+
+
+
+    })();
+	//INIT
+	(makeRequestBuildingSilent());
+</script>
+</html>
